@@ -1,0 +1,10 @@
+CREATE TABLE User (
+    id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+    username TEXT NOT NULL
+);
+
+insertUser:
+INSERT INTO User(username) VALUES (?);
+
+getLastUser:
+SELECT * FROM User ORDER BY id DESC LIMIT 1;
