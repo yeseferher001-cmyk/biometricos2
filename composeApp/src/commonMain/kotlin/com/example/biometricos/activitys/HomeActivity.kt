@@ -51,10 +51,10 @@ fun HomeActivity(userName: String, onBackToLogin: () -> Unit) {
     var extractedMin by remember { mutableStateOf(0.0) }
     var history by remember { mutableStateOf<List<TrainingSession>>(emptyList()) }
 
-    // Función para extraer números del texto (Distancia y Tiempo)
+    // Función para extraer números del texto (Distancia y Tiempo) - RF03
     fun processTranscription(text: String) {
-        val kmRegex = "(\\d+([.,]\\d+)?)\\s*(km|kilómetros|kilometros)".toRegex(RegexOption.IGNORE_CASE)
-        val minRegex = "(\\d+([.,]\\d+)?)\\s*(min|minutos)".toRegex(RegexOption.IGNORE_CASE)
+        val kmRegex = "(\\d+([.,]\\d+)?)\\s*(km|kilómetros|kilometros|kilómetro)".toRegex(RegexOption.IGNORE_CASE)
+        val minRegex = "(\\d+([.,]\\d+)?)\\s*(min|minutos|minuto)".toRegex(RegexOption.IGNORE_CASE)
         
         extractedKm = kmRegex.find(text)?.groupValues?.get(1)?.replace(",", ".")?.toDoubleOrNull() ?: 0.0
         extractedMin = minRegex.find(text)?.groupValues?.get(1)?.replace(",", ".")?.toDoubleOrNull() ?: 0.0
@@ -63,6 +63,9 @@ fun HomeActivity(userName: String, onBackToLogin: () -> Unit) {
     LaunchedEffect(Unit) {
         if (platform.isNetworkAvailable()) {
             history = api.getTrainings(userName)
+        } else {
+            // RNF04 - Disponibilidad
+            scope.launch { snackbarHostState.showSnackbar("Sin conexión a internet") }
         }
     }
 
@@ -72,12 +75,22 @@ fun HomeActivity(userName: String, onBackToLogin: () -> Unit) {
         topBar = {
             CenterAlignedTopAppBar(
                 title = { 
-                    Text(
-                        "MI PANEL", 
-                        fontWeight = FontWeight.Light, 
-                        color = Color.White,
-                        letterSpacing = 4.sp
-                    ) 
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text(
+                            "BIENVENIDO", 
+                            fontWeight = FontWeight.ExtraLight, 
+                            color = Color.White,
+                            fontSize = 14.sp,
+                            letterSpacing = 4.sp
+                        )
+                        Text(
+                            userName.uppercase(), 
+                            fontWeight = FontWeight.Bold, 
+                            color = darkGold,
+                            fontSize = 18.sp,
+                            letterSpacing = 2.sp
+                        )
+                    }
                 },
                 navigationIcon = {
                     IconButton(onClick = onBackToLogin) {
@@ -103,6 +116,7 @@ fun HomeActivity(userName: String, onBackToLogin: () -> Unit) {
                 .verticalScroll(rememberScrollState()),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
+            // RF02 - Captura por Voz
             Card(
                 modifier = Modifier.fillMaxWidth(),
                 colors = CardDefaults.cardColors(containerColor = cardBackground),
@@ -124,14 +138,15 @@ fun HomeActivity(userName: String, onBackToLogin: () -> Unit) {
                         modifier = Modifier.fillMaxWidth(),
                         contentAlignment = Alignment.Center
                     ) {
+                        // RNF02 - Usabilidad (Botones grandes)
                         Button(
                             onClick = { 
                                 if (!isRecording) {
                                     isRecording = true
                                     platform.startListening { result ->
+                                        isRecording = false // Detener estado visual al recibir resultado
                                         if (result.startsWith("ERROR:")) {
                                             scope.launch { snackbarHostState.showSnackbar(result) }
-                                            isRecording = false
                                         } else {
                                             transcribedText = result
                                             processTranscription(result)
@@ -143,7 +158,7 @@ fun HomeActivity(userName: String, onBackToLogin: () -> Unit) {
                                 }
                             },
                             shape = CircleShape,
-                            modifier = Modifier.size(70.dp),
+                            modifier = Modifier.size(80.dp),
                             contentPadding = PaddingValues(0.dp),
                             colors = ButtonDefaults.buttonColors(
                                 containerColor = if (isRecording) Color.Red else darkGold
@@ -152,7 +167,7 @@ fun HomeActivity(userName: String, onBackToLogin: () -> Unit) {
                             Icon(
                                 if (isRecording) Icons.Default.Stop else Icons.Default.Mic,
                                 contentDescription = null,
-                                modifier = Modifier.size(30.dp),
+                                modifier = Modifier.size(40.dp),
                                 tint = if (isRecording) Color.White else darkBackground
                             )
                         }
@@ -163,74 +178,94 @@ fun HomeActivity(userName: String, onBackToLogin: () -> Unit) {
                             "ESCUCHANDO...", 
                             color = Color.Red, 
                             modifier = Modifier.padding(top = 12.dp),
-                            fontWeight = FontWeight.Bold
+                            fontWeight = FontWeight.Bold,
+                            letterSpacing = 1.sp
                         )
                     }
 
-                    if (transcribedText.isNotEmpty()) {
-                        Spacer(modifier = Modifier.height(24.dp))
-                        OutlinedTextField(
-                            value = transcribedText,
-                            onValueChange = { 
-                                transcribedText = it 
-                                processTranscription(it)
-                            },
-                            label = { Text("Texto Transcrito", color = lightGray) },
-                            modifier = Modifier.fillMaxWidth(),
-                            colors = OutlinedTextFieldDefaults.colors(
-                                focusedTextColor = Color.White,
-                                unfocusedTextColor = Color.White,
-                                focusedBorderColor = darkGold,
-                                unfocusedBorderColor = lightGray,
-                                focusedLabelColor = darkGold
-                            )
+                    Spacer(modifier = Modifier.height(24.dp))
+                    
+                    // RF03 - Confirmar o editar texto
+                    OutlinedTextField(
+                        value = transcribedText,
+                        onValueChange = { 
+                            transcribedText = it 
+                            processTranscription(it)
+                        },
+                        label = { Text("Nota de avances", color = lightGray) },
+                        modifier = Modifier.fillMaxWidth(),
+                        placeholder = { Text("Hable para dictar sus avances...", color = lightGray.copy(alpha = 0.5f)) },
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedTextColor = Color.White,
+                            unfocusedTextColor = Color.White,
+                            focusedBorderColor = darkGold,
+                            unfocusedBorderColor = lightGray,
+                            focusedLabelColor = darkGold
                         )
-                        Spacer(modifier = Modifier.height(16.dp))
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            Text("Distancia: $extractedKm km", color = Color.White)
-                            Text("Tiempo: $extractedMin min", color = Color.White)
+                    )
+                    
+                    Spacer(modifier = Modifier.height(16.dp))
+                    
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Column {
+                            Text("DISTANCIA", color = lightGray, fontSize = 10.sp, letterSpacing = 1.sp)
+                            Text("$extractedKm km", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 18.sp)
                         }
-                        Spacer(modifier = Modifier.height(16.dp))
-                        Button(
-                            onClick = {
-                                scope.launch {
-                                    val session = TrainingSession(
-                                        username = userName,
-                                        rawText = transcribedText,
-                                        distanceKm = extractedKm,
-                                        durationMin = extractedMin,
-                                        timestamp = KtClock.System.now().toEpochMilliseconds()
-                                    )
-                                    val success = api.saveTraining(session)
-                                    if (success) {
-                                        snackbarHostState.showSnackbar("Guardado en MongoDB")
-                                        history = api.getTrainings(userName)
-                                        transcribedText = ""
-                                        extractedKm = 0.0
-                                        extractedMin = 0.0
-                                    } else {
-                                        snackbarHostState.showSnackbar("Error: Verifica tu servidor en Render")
-                                    }
+                        Column(horizontalAlignment = Alignment.End) {
+                            Text("TIEMPO", color = lightGray, fontSize = 10.sp, letterSpacing = 1.sp)
+                            Text("${extractedMin.toInt()} min", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 18.sp)
+                        }
+                    }
+                    
+                    Spacer(modifier = Modifier.height(24.dp))
+                    
+                    // RF04 - Persistencia de Datos
+                    Button(
+                        onClick = {
+                            scope.launch {
+                                if (!platform.isNetworkAvailable()) {
+                                    snackbarHostState.showSnackbar("No hay conexión a internet")
+                                    return@launch
                                 }
-                            },
-                            modifier = Modifier.fillMaxWidth(),
-                            colors = ButtonDefaults.buttonColors(containerColor = darkGold),
-                            enabled = extractedKm > 0 || extractedMin > 0
-                        ) {
-                            Icon(Icons.Default.CloudUpload, contentDescription = null, tint = darkBackground)
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text("SUBIR AVANCES", color = darkBackground, fontWeight = FontWeight.Bold)
-                        }
+                                
+                                val session = TrainingSession(
+                                    username = userName,
+                                    rawText = transcribedText,
+                                    distanceKm = extractedKm,
+                                    durationMin = extractedMin,
+                                    timestamp = KtClock.System.now().toEpochMilliseconds()
+                                )
+                                val success = api.saveTraining(session)
+                                if (success) {
+                                    snackbarHostState.showSnackbar("Avances guardados exitosamente")
+                                    history = api.getTrainings(userName)
+                                    transcribedText = ""
+                                    extractedKm = 0.0
+                                    extractedMin = 0.0
+                                } else {
+                                    snackbarHostState.showSnackbar("Error al guardar en la nube (Verifique Render)")
+                                }
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth().height(50.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = darkGold),
+                        enabled = transcribedText.isNotBlank() && (extractedKm > 0 || extractedMin > 0)
+                    ) {
+                        Icon(Icons.Default.CloudUpload, contentDescription = null, tint = darkBackground)
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("SUBIR AVANCES", color = darkBackground, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
                     }
                 }
             }
 
             Spacer(modifier = Modifier.height(32.dp))
+            
+            // RF05 - Visualización de Progreso
             Text(
-                "HISTORIAL Y GRÁFICOS", 
+                "PROGRESO ESTADÍSTICO", 
                 style = MaterialTheme.typography.titleMedium,
                 color = darkGold,
                 letterSpacing = 2.sp
@@ -238,27 +273,62 @@ fun HomeActivity(userName: String, onBackToLogin: () -> Unit) {
             Spacer(modifier = Modifier.height(16.dp))
 
             if (history.isNotEmpty()) {
-                Box(modifier = Modifier.background(cardBackground).padding(8.dp).fillMaxWidth()) {
-                    TrainingChart(history, darkGold, Color.White)
+                Box(
+                    modifier = Modifier
+                        .background(cardBackground)
+                        .padding(16.dp)
+                        .fillMaxWidth()
+                ) {
+                    TrainingChart(history, darkGold)
                 }
-                Spacer(modifier = Modifier.height(16.dp))
+                
+                Spacer(modifier = Modifier.height(24.dp))
+                
+                Text(
+                    "HISTORIAL RECIENTE", 
+                    color = lightGray, 
+                    fontSize = 12.sp, 
+                    modifier = Modifier.align(Alignment.Start).padding(bottom = 8.dp)
+                )
+                
                 history.forEach { session ->
                     Card(
                         modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
                         colors = CardDefaults.cardColors(containerColor = cardBackground)
                     ) {
                         Column(modifier = Modifier.padding(12.dp)) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Text(
+                                    "${session.distanceKm} KM", 
+                                    fontWeight = FontWeight.Bold,
+                                    color = darkGold
+                                )
+                                Text(
+                                    "${session.durationMin.toInt()} MIN", 
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color.White
+                                )
+                            }
+                            Spacer(modifier = Modifier.height(4.dp))
                             Text(
-                                "${session.distanceKm} km en ${session.durationMin} min", 
-                                fontWeight = FontWeight.Bold,
-                                color = darkGold
+                                session.rawText, 
+                                style = MaterialTheme.typography.bodySmall, 
+                                color = lightGray
                             )
-                            Text(session.rawText, style = MaterialTheme.typography.bodySmall, color = Color.White)
                         }
                     }
                 }
             } else {
-                Text("No hay entrenamientos guardados.", color = lightGray)
+                Column(
+                    modifier = Modifier.padding(40.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Text("No hay registros previos", color = lightGray)
+                    Text("¡Dicta tu primer entrenamiento!", color = lightGray, fontSize = 12.sp)
+                }
             }
         }
     }
@@ -266,27 +336,28 @@ fun HomeActivity(userName: String, onBackToLogin: () -> Unit) {
 
 @OptIn(ExperimentalKoalaPlotApi::class)
 @Composable
-fun TrainingChart(history: List<TrainingSession>, lineColor: Color, textColor: Color) {
+fun TrainingChart(history: List<TrainingSession>, lineColor: Color) {
+    // Ordenar por fecha para que la gráfica tenga sentido - RF05
     val sortedHistory = history.sortedBy { it.timestamp }
     val data = sortedHistory.mapIndexed { index, session -> 
         DefaultPoint(index.toFloat(), session.distanceKm.toFloat()) 
     }
     
     val xMax = (history.size.toFloat() - 1f).coerceAtLeast(1f)
-    val yMax = (history.maxOfOrNull { it.distanceKm }?.toFloat() ?: 10f) + 2f
+    val yMax = (history.maxOfOrNull { it.distanceKm }?.toFloat() ?: 5f) + 2f
 
     XYGraph(
         xAxisModel = FloatLinearAxisModel(0f..xMax),
         yAxisModel = FloatLinearAxisModel(0f..yMax),
-        modifier = Modifier.fillMaxWidth().height(200.dp),
-        xAxisLabels = { x: Float -> x.toInt().toString() },
+        modifier = Modifier.fillMaxWidth().height(220.dp),
+        xAxisLabels = { x: Float -> (x.toInt() + 1).toString() },
         yAxisLabels = { y: Float -> y.toInt().toString() },
-        xAxisTitle = "Sesión #",
-        yAxisTitle = "Kilómetros (Km)"
+        xAxisTitle = "Sesiones Realizadas",
+        yAxisTitle = "Distancia Recorrida (Km)"
     ) {
         LinePlot(
             data = data,
-            lineStyle = LineStyle(brush = SolidColor(lineColor), strokeWidth = 2.dp)
+            lineStyle = LineStyle(brush = SolidColor(lineColor), strokeWidth = 3.dp)
         )
     }
 }
