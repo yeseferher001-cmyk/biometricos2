@@ -1,0 +1,14 @@
+{
+  "name": "biometricos-backend",
+  "version": "1.0.0",
+  "description": "Backend para la aplicación de Biométricos con MongoDB",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "express": "^4.19.2",
+    "mongoose": "^8.4.0",
+    "cors": "^2.8.5"
+  }
+}
