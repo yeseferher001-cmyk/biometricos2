@@ -6,5 +6,9 @@
 	<true/>
 	<key>NSFaceIDUsageDescription</key>
 	<string>Necesitamos usar Face ID para autenticarte y dejarte entrar a la bitácora.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Necesitamos acceso al micrófono para que puedas dictar tus entrenamientos.</string>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>Necesitamos permiso para transcribir tu voz a texto para el registro de avances.</string>
 </dict>
 </plist>

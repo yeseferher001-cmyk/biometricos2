@@ -4,6 +4,8 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -16,11 +18,13 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.biometricos.getPlatform
-import com.example.biometricos.network.AthleteApi
+import com.example.biometricos.data.TrainingRepository
 import com.example.biometricos.network.TrainingSession
 import kotlinx.coroutines.launch
 import io.github.koalaplot.core.xygraph.XYGraph
@@ -33,11 +37,15 @@ import kotlinx.datetime.Clock as KtClock
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun HomeActivity(userName: String, onBackToLogin: () -> Unit) {
+fun HomeActivity(
+    userName: String, 
+    repository: TrainingRepository,
+    onBackToLogin: () -> Unit
+) {
     val platform = getPlatform()
-    val api = remember { AthleteApi() }
     val scope = rememberCoroutineScope()
     val snackbarHostState = remember { SnackbarHostState() }
+    val focusManager = LocalFocusManager.current
     
     // Colores del Login
     val darkGold = Color(0xFFC5A358)
@@ -46,12 +54,13 @@ fun HomeActivity(userName: String, onBackToLogin: () -> Unit) {
     val cardBackground = Color(0xFF25282B)
 
     var isRecording by remember { mutableStateOf(false) }
+    var isSaving by remember { mutableStateOf(false) }
     var transcribedText by remember { mutableStateOf("") }
     var extractedKm by remember { mutableStateOf(0.0) }
     var extractedMin by remember { mutableStateOf(0.0) }
     var history by remember { mutableStateOf<List<TrainingSession>>(emptyList()) }
 
-    // Función para extraer números del texto (Distancia y Tiempo) - RF03
+    // Función para extraer números del texto (Distancia y Tiempo)
     fun processTranscription(text: String) {
         val kmRegex = "(\\d+([.,]\\d+)?)\\s*(km|kilómetros|kilometros|kilómetro)".toRegex(RegexOption.IGNORE_CASE)
         val minRegex = "(\\d+([.,]\\d+)?)\\s*(min|minutos|minuto)".toRegex(RegexOption.IGNORE_CASE)
@@ -60,13 +69,27 @@ fun HomeActivity(userName: String, onBackToLogin: () -> Unit) {
         extractedMin = minRegex.find(text)?.groupValues?.get(1)?.replace(",", ".")?.toDoubleOrNull() ?: 0.0
     }
 
-    LaunchedEffect(Unit) {
-        if (platform.isNetworkAvailable()) {
-            history = api.getTrainings(userName)
-        } else {
-            // RNF04 - Disponibilidad
-            scope.launch { snackbarHostState.showSnackbar("Sin conexión a internet") }
+    // Guardar usando el repositorio (Local -> Nube)
+    suspend fun saveProgress(text: String, km: Double, min: Double) {
+        if (isSaving) return
+        isSaving = true
+        try {
+            val success = repository.saveTraining(userName, text, km, min)
+            if (success) {
+                snackbarHostState.currentSnackbarData?.dismiss()
+                snackbarHostState.showSnackbar("Guardado localmente. Sincronizando...")
+                history = repository.getTrainings(userName)
+                transcribedText = ""
+                extractedKm = 0.0
+                extractedMin = 0.0
+            }
+        } finally {
+            isSaving = false
         }
+    }
+
+    LaunchedEffect(Unit) {
+        history = repository.getTrainings(userName)
     }
 
     Scaffold(
@@ -116,7 +139,6 @@ fun HomeActivity(userName: String, onBackToLogin: () -> Unit) {
                 .verticalScroll(rememberScrollState()),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            // RF02 - Captura por Voz
             Card(
                 modifier = Modifier.fillMaxWidth(),
                 colors = CardDefaults.cardColors(containerColor = cardBackground),
@@ -138,15 +160,17 @@ fun HomeActivity(userName: String, onBackToLogin: () -> Unit) {
                         modifier = Modifier.fillMaxWidth(),
                         contentAlignment = Alignment.Center
                     ) {
-                        // RNF02 - Usabilidad (Botones grandes)
                         Button(
                             onClick = { 
                                 if (!isRecording) {
                                     isRecording = true
                                     platform.startListening { result ->
-                                        isRecording = false // Detener estado visual al recibir resultado
                                         if (result.startsWith("ERROR:")) {
-                                            scope.launch { snackbarHostState.showSnackbar(result) }
+                                            scope.launch { 
+                                                snackbarHostState.currentSnackbarData?.dismiss()
+                                                snackbarHostState.showSnackbar(result) 
+                                            }
+                                            isRecording = false
                                         } else {
                                             transcribedText = result
                                             processTranscription(result)
@@ -155,6 +179,11 @@ fun HomeActivity(userName: String, onBackToLogin: () -> Unit) {
                                 } else {
                                     isRecording = false
                                     platform.stopListening()
+                                    if (transcribedText.isNotBlank() && (extractedKm > 0 || extractedMin > 0)) {
+                                        scope.launch {
+                                            saveProgress(transcribedText, extractedKm, extractedMin)
+                                        }
+                                    }
                                 }
                             },
                             shape = CircleShape,
@@ -185,7 +214,6 @@ fun HomeActivity(userName: String, onBackToLogin: () -> Unit) {
 
                     Spacer(modifier = Modifier.height(24.dp))
                     
-                    // RF03 - Confirmar o editar texto
                     OutlinedTextField(
                         value = transcribedText,
                         onValueChange = { 
@@ -195,6 +223,14 @@ fun HomeActivity(userName: String, onBackToLogin: () -> Unit) {
                         label = { Text("Nota de avances", color = lightGray) },
                         modifier = Modifier.fillMaxWidth(),
                         placeholder = { Text("Hable para dictar sus avances...", color = lightGray.copy(alpha = 0.5f)) },
+                        keyboardOptions = KeyboardOptions(
+                            imeAction = ImeAction.Next
+                        ),
+                        keyboardActions = KeyboardActions(
+                            onNext = {
+                                focusManager.clearFocus()
+                            }
+                        ),
                         colors = OutlinedTextFieldDefaults.colors(
                             focusedTextColor = Color.White,
                             unfocusedTextColor = Color.White,
@@ -222,48 +258,33 @@ fun HomeActivity(userName: String, onBackToLogin: () -> Unit) {
                     
                     Spacer(modifier = Modifier.height(24.dp))
                     
-                    // RF04 - Persistencia de Datos
                     Button(
                         onClick = {
                             scope.launch {
-                                if (!platform.isNetworkAvailable()) {
-                                    snackbarHostState.showSnackbar("No hay conexión a internet")
-                                    return@launch
-                                }
-                                
-                                val session = TrainingSession(
-                                    username = userName,
-                                    rawText = transcribedText,
-                                    distanceKm = extractedKm,
-                                    durationMin = extractedMin,
-                                    timestamp = KtClock.System.now().toEpochMilliseconds()
-                                )
-                                val success = api.saveTraining(session)
-                                if (success) {
-                                    snackbarHostState.showSnackbar("Avances guardados exitosamente")
-                                    history = api.getTrainings(userName)
-                                    transcribedText = ""
-                                    extractedKm = 0.0
-                                    extractedMin = 0.0
-                                } else {
-                                    snackbarHostState.showSnackbar("Error al guardar en la nube (Verifique Render)")
-                                }
+                                saveProgress(transcribedText, extractedKm, extractedMin)
                             }
                         },
                         modifier = Modifier.fillMaxWidth().height(50.dp),
                         colors = ButtonDefaults.buttonColors(containerColor = darkGold),
-                        enabled = transcribedText.isNotBlank() && (extractedKm > 0 || extractedMin > 0)
+                        enabled = !isSaving && transcribedText.isNotBlank() && (extractedKm > 0 || extractedMin > 0)
                     ) {
-                        Icon(Icons.Default.CloudUpload, contentDescription = null, tint = darkBackground)
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text("SUBIR AVANCES", color = darkBackground, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
+                        if (isSaving) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(24.dp),
+                                color = darkBackground,
+                                strokeWidth = 2.dp
+                            )
+                        } else {
+                            Icon(Icons.Default.CloudUpload, contentDescription = null, tint = darkBackground)
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("GUARDAR AVANCES", color = darkBackground, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
+                        }
                     }
                 }
             }
 
             Spacer(modifier = Modifier.height(32.dp))
             
-            // RF05 - Visualización de Progreso
             Text(
                 "PROGRESO ESTADÍSTICO", 
                 style = MaterialTheme.typography.titleMedium,
@@ -337,7 +358,6 @@ fun HomeActivity(userName: String, onBackToLogin: () -> Unit) {
 @OptIn(ExperimentalKoalaPlotApi::class)
 @Composable
 fun TrainingChart(history: List<TrainingSession>, lineColor: Color) {
-    // Ordenar por fecha para que la gráfica tenga sentido - RF05
     val sortedHistory = history.sortedBy { it.timestamp }
     val data = sortedHistory.mapIndexed { index, session -> 
         DefaultPoint(index.toFloat(), session.distanceKm.toFloat()) 
